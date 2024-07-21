@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 import os
 import re
 from os.path import expandvars
@@ -7,8 +8,7 @@ from cleo.io.io import IO
 from poetry.plugins.plugin import Plugin
 from poetry.poetry import Poetry
 from poetry.repositories.legacy_repository import LegacyRepository
-from poetry.repositories.repository import Repository
-from poetry.repositories.repository_pool import Priority, RepositoryPool
+from poetry.repositories.repository_pool import Priority
 from poetry.toml.file import TOMLFile
 
 
@@ -32,7 +32,7 @@ class PypiMirrorRepository(LegacyRepository):
 
 
 class PoetrySourcePlugin(Plugin):
-    def activate(self, poetry: Poetry, io: IO = None) -> None:
+    def activate(self, poetry: Poetry, io: Optional[IO] = None) -> None:
         config: PSPConfig = PSPConfig.load(poetry.pyproject.file)
 
         # evaluate substitutions in config
@@ -80,7 +80,7 @@ class PoetrySourcePlugin(Plugin):
                 add_or_replace_repository(poetry, repo, priority)
 
 
-def update_sources(poetry: Poetry, repo: Repository):
+def update_sources(poetry: Poetry, repo: LegacyRepository):
     poetry_config = poetry.pyproject.poetry_config
     _repo_name_lc = repo.name.lower()
     new_config = {
@@ -99,7 +99,7 @@ def update_sources(poetry: Poetry, repo: Repository):
 
 
 def add_or_replace_repository(
-    poetry: Poetry, repo: Repository, priority: Priority
+    poetry: Poetry, repo: LegacyRepository, priority: Priority
 ) -> None:
     # replace DEFAULT priority with PRIMARY
     if priority is Priority.DEFAULT:
