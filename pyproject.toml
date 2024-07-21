@@ -17,7 +17,7 @@ poetry-source-env = "poetry_source_env.plugin:PoetrySourcePlugin"
 
 
 [tool.poetry.group.test.dependencies]
-pytest = "^7.4.3"
+pytest = "^8.3.1"
 
 [tool.black]
 target-version = ["py38"]
