@@ -37,10 +37,10 @@ jobs:
         run: |
           python -m pytest
 
-#      - name: Check syntax
-#        run: |
-#          python -m ruff check src
-#          python -m ruff format --check src
-#          python -m mypy src
-#        env:
-#          RUFF_OUTPUT_FORMAT: github
+      - name: Check syntax
+        run: |
+          python -m ruff check poetry_source_env
+          python -m ruff format --check poetry_source_env
+          python -m mypy poetry_source_env
+        env:
+          RUFF_OUTPUT_FORMAT: github
