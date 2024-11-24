@@ -1,0 +1,46 @@
+---
+name: hhdeploy package
+'on':
+  pull_request:
+    branches: ["main", "develop"]
+  push:
+    branches: ["main", "develop"]  # cache from master shared with child branches
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        poetry-version: ["<1.8", "<1.9"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install python
+        id: venv
+        uses: getsentry/action-setup-venv@f0daafa9688e48f939cace0378a46f2d422bd81f
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache-dependency-path: |
+            .github/requirements-test.txt
+
+      - name: Install package
+        run: |
+          python -m pip install -r .github/requirements-test.txt "poetry${{ matrix.poetry-version }}"
+          python -m poetry install
+        env:
+          POETRY_VIRTUALENVS_CREATE: 'false'
+
+      - name: Test with pytest
+        run: |
+          python -m pytest
+
+      - name: Check syntax
+        run: |
+          python -m ruff check poetry_source_env
+          python -m ruff format --check poetry_source_env
+          python -m mypy poetry_source_env
+        env:
+          RUFF_OUTPUT_FORMAT: github

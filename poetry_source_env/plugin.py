@@ -1,37 +1,54 @@
+from dataclasses import dataclass
+from typing import Optional
 import os
 import re
 from os.path import expandvars
 
 from cleo.io.io import IO
-from dict_deep import deep_get
 from poetry.plugins.plugin import Plugin
 from poetry.poetry import Poetry
 from poetry.repositories.legacy_repository import LegacyRepository
 from poetry.repositories.repository_pool import Priority
 from poetry.toml.file import TOMLFile
-from pydantic import BaseSettings, validate_arguments
-from typing_extensions import Self
 
 
-class PSPConfig(BaseSettings):
+@dataclass
+class PSPConfig:
     prefix: str = "POETRY_REPOSITORIES_"
     env: bool = True
     toml: bool = True
 
     @classmethod
-    @validate_arguments(config=dict(arbitrary_types_allowed=True))
-    def load(cls, file: TOMLFile) -> Self:
+    def load(cls, file: TOMLFile) -> "PSPConfig":
         pyproject = file.read()
-        return cls.parse_obj(deep_get(pyproject, "tool.poetry-source-env") or {})
+        config = pyproject.get("tool", {}).get("poetry-source-env") or {}
+        return cls(**config)
+
+
+class PypiMirrorRepository(LegacyRepository):
+    def __init__(self, name: str, *args, **kwargs) -> None:
+        super().__init__(f"tmp_{name}", *args, **kwargs)
+        self._name = name
 
 
 class PoetrySourcePlugin(Plugin):
-    def activate(self, poetry: Poetry, io: IO = None) -> None:
+    def activate(self, poetry: Poetry, io: Optional[IO] = None) -> None:
         config: PSPConfig = PSPConfig.load(poetry.pyproject.file)
+
+        # evaluate substitutions in config
+        if config.toml:
+            for cfg_repo in poetry.get_sources():
+                repo = PypiMirrorRepository(
+                    expandvars(cfg_repo.name), expandvars(cfg_repo.url)
+                )
+                add_or_replace_repository(
+                    poetry, repo, poetry.pool.get_priority(repo.name)
+                )
 
         if config.env:
             repositories = {}
-            pattern = re.compile(rf"{config.prefix}(?P<name>[A-Z_]+)_URL")
+            _prefix = re.escape(config.prefix)
+            pattern = re.compile(rf"{_prefix}(?P<name>[A-Z_]+)_URL")
 
             for env_key in os.environ.keys():
                 match = pattern.match(env_key)
@@ -42,7 +59,10 @@ class PoetrySourcePlugin(Plugin):
                     }
 
             for name, repository in repositories.items():
-                repo = LegacyRepository(name, repository["url"])
+                if name == "pypi":
+                    name = "PyPI"
+
+                repo = PypiMirrorRepository(name, repository["url"])
 
                 priority_name = os.getenv(
                     f"{config.prefix}{repository['env_name']}_PRIORITY", "primary"
@@ -57,12 +77,42 @@ class PoetrySourcePlugin(Plugin):
 
                 priority = priorities.get(priority_name.casefold(), Priority.PRIMARY)
 
-                poetry.pool.add_repository(repo, priority=priority)
+                add_or_replace_repository(poetry, repo, priority)
 
-        if config.toml:
-            for repository in poetry.get_sources():
-                poetry.pool.remove_repository(repository.name)
-                repo = LegacyRepository(
-                    expandvars(repository.name), expandvars(repository.url)
-                )
-                poetry.pool.add_repository(repo, priority=repository.priority)
+
+def update_sources(poetry: Poetry, repo: LegacyRepository):
+    poetry_config = poetry.pyproject.poetry_config
+    _repo_name_lc = repo.name.lower()
+    new_config = {
+        "name": repo.name,
+        "priority": poetry.pool.get_priority(repo.name).name,
+        "url": repo.url,
+    }
+
+    for index, old_source in enumerate(poetry_config.get("source", [])):
+        if old_source.get("name", "").lower() == new_config["name"].lower():
+            poetry_config["source"][index].update(new_config)
+            break
+    else:
+        poetry_config.setdefault("source", [])
+        poetry_config["source"].append(new_config)
+
+
+def add_or_replace_repository(
+    poetry: Poetry, repo: LegacyRepository, priority: Priority
+) -> None:
+    # replace DEFAULT priority with PRIMARY
+    if priority is Priority.DEFAULT:
+        for _repo in (
+            x
+            for x in poetry.pool.all_repositories
+            if poetry.pool.get_priority(x.name) is Priority.DEFAULT
+        ):
+            poetry.pool.remove_repository(_repo.name)
+            poetry.pool.add_repository(_repo, priority=Priority.PRIMARY)
+
+    # remove repository if already exists
+    if poetry.pool.has_repository(repo.name):
+        poetry.pool.remove_repository(repo.name)
+    poetry.pool.add_repository(repo, priority=priority)
+    update_sources(poetry, repo)
