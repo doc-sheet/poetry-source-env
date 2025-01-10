@@ -69,7 +69,6 @@ class PoetrySourcePlugin(Plugin):
                 )
 
                 priorities = {
-                    "default": Priority.DEFAULT,
                     "primary": Priority.PRIMARY,
                     "supplemental": Priority.SUPPLEMENTAL,
                     "explicit": Priority.EXPLICIT,
@@ -101,16 +100,6 @@ def update_sources(poetry: Poetry, repo: LegacyRepository):
 def add_or_replace_repository(
     poetry: Poetry, repo: LegacyRepository, priority: Priority
 ) -> None:
-    # replace DEFAULT priority with PRIMARY
-    if priority is Priority.DEFAULT:
-        for _repo in (
-            x
-            for x in poetry.pool.all_repositories
-            if poetry.pool.get_priority(x.name) is Priority.DEFAULT
-        ):
-            poetry.pool.remove_repository(_repo.name)
-            poetry.pool.add_repository(_repo, priority=Priority.PRIMARY)
-
     # remove repository if already exists
     if poetry.pool.has_repository(repo.name):
         poetry.pool.remove_repository(repo.name)
